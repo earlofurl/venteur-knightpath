@@ -12,7 +12,10 @@ public class KnightPathResult
 {
     public string PartitionKey { get; set; }
     public string RowKey { get; set; }
-    public int Result { get; set; }
+    public int? NumberOfMoves { get; set; }
+    public string ShortestPath { get; set; }
+    public string Starting { get; set; }
+    public string Ending { get; set; }
     public DateTimeOffset Timestamp { get; set; }
 }
 
@@ -30,17 +33,30 @@ public static class ProcessKnightPath
         var job = JsonConvert.DeserializeObject<KnightPathJob>(myQueueItem);
         var source = job.Source;
         var target = job.Target;
+        int? result = null;
 
-        // Calculate the shortest path for a chess knight from source to target
-        var result = CalculateShortestPath(source, target);
+        try
+        {
+            // Calculate the shortest path for a chess knight from source to target
+            var tempResult = CalculateShortestPath(source, target);
+            if (tempResult != -1) // only assign valid results
+                result = tempResult;
+        }
+        catch (Exception ex)
+        {
+            log.LogError("An error occurred: {Message}", ex.Message);
+        }
 
         // Store the result in Azure Table Storage
         await table.AddAsync(new KnightPathResult
         {
             PartitionKey = "KnightPath",
             RowKey = job.Id,
-            Result = result,
-            Timestamp = DateTime.UtcNow
+            NumberOfMoves = result, // this will be null if there is no valid path
+            ShortestPath = "",
+            Starting = source,
+            Ending = target,
+            Timestamp = DateTimeOffset.UtcNow
         });
 
         log.LogInformation("ProcessKnightPath processed a request: {MyQueueItem}", myQueueItem);
@@ -51,10 +67,8 @@ public static class ProcessKnightPath
         var regex = new Regex("^[a-h][1-8]$");
 
         if (!regex.IsMatch(source) || !regex.IsMatch(target))
-        {
             throw new ArgumentException("Invalid source or target. They must be between a1 and h8 inclusive.");
-        }
-        
+
         // Parse the source and target strings into x and y coordinates
         var sourceX = source[0] - 'a';
         var sourceY = int.Parse(source[1].ToString()) - 1;
@@ -66,7 +80,7 @@ public static class ProcessKnightPath
         int[] col = { -1, 1, 1, -1, 2, -2, 2, -2 };
 
         // Create a queue for BFS and enqueue the source cell
-        Queue<(int x, int y)> queue = new Queue<(int x, int y)>();
+        var queue = new Queue<(int x, int y)>();
         queue.Enqueue((sourceX, sourceY));
 
         // Create a visited array to keep track of visited cells
@@ -80,7 +94,7 @@ public static class ProcessKnightPath
         // Perform BFS
         while (queue.Count > 0)
         {
-            (int x, int y) = queue.Dequeue();
+            var (x, y) = queue.Dequeue();
 
             // If we have reached the target cell, return the distance
             if (x == targetX && y == targetY)

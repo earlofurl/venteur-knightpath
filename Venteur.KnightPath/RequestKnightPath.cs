@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -21,31 +22,41 @@ public static class RequestKnightPath
 {
     [FunctionName("RequestKnightPath")]
     public static async Task<IActionResult> RunAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "knightpath")] HttpRequest req, 
-        [Queue("knightpath-queue")] [StorageAccount("AzureWebJobsStorage")] ICollector<string> msg,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "knightpath")]
+        HttpRequest req,
+        [Queue("knightpath-queue")] [StorageAccount("AzureWebJobsStorage")]
+        ICollector<string> msg,
         ILogger log)
     {
         log.LogInformation("RequestKnightPath processing a request");
 
         string source = req.Query["source"];
         string target = req.Query["target"];
-        
-        var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+
+        using var reader = new StreamReader(req.Body);
+        var requestBody = await reader.ReadToEndAsync();
         dynamic data = JsonConvert.DeserializeObject(requestBody);
-        source = source ?? data?.source;
-        target = target ?? data?.target;
+        source = (source ?? data?.source)?.ToLower();
+        target = (target ?? data?.target)?.ToLower();
 
         if (source == null || target == null)
             return new BadRequestObjectResult(
-                "Please pass a source and target on the query string or in the request body");
+                "Source or target is null. Please ensure they are included in your request.");
+
+        var isValidSource = Regex.IsMatch(source, "^[a-h][1-8]$");
+        var isValidTarget = Regex.IsMatch(target, "^[a-h][1-8]$");
+
+        if (!isValidSource || !isValidTarget)
+            return new BadRequestObjectResult(
+                "Invalid source or target. They must be between a1 and h8 inclusive.");
 
         var job = new KnightPathJob
         {
             Source = source,
             Target = target,
-            Id = Guid.NewGuid().ToString(),
+            Id = Guid.NewGuid().ToString()
         };
-        
+
         msg.Add(JsonConvert.SerializeObject(job));
         log.LogInformation("RequestKnightPath processed a request");
 
