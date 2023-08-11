@@ -21,8 +21,8 @@ public static class RequestKnightPath
 {
     [FunctionName("RequestKnightPath")]
     public static async Task<IActionResult> RunAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "knightpath")]
-        HttpRequest req, [Queue("knightpath-queue")] [StorageAccount("AzureWebJobsStorage")] ICollector<string> msg,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "knightpath")] HttpRequest req, 
+        [Queue("knightpath-queue")] [StorageAccount("AzureWebJobsStorage")] ICollector<string> msg,
         ILogger log)
     {
         log.LogInformation("RequestKnightPath processing a request");
