@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +10,13 @@ using Newtonsoft.Json;
 
 namespace Venteur.KnightPath;
 
+public class KnightPathJob
+{
+    public string Source { get; set; }
+    public string Target { get; set; }
+    public string Id { get; set; }
+}
+
 public static class RequestKnightPath
 {
     [FunctionName("RequestKnightPath")]
@@ -17,11 +25,11 @@ public static class RequestKnightPath
         HttpRequest req, [Queue("knightpath-queue")] [StorageAccount("AzureWebJobsStorage")] ICollector<string> msg,
         ILogger log)
     {
-        log.LogInformation("RequestKnightPath processed a request");
+        log.LogInformation("RequestKnightPath processing a request");
 
         string source = req.Query["source"];
         string target = req.Query["target"];
-
+        
         var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
         dynamic data = JsonConvert.DeserializeObject(requestBody);
         source = source ?? data?.source;
@@ -31,7 +39,16 @@ public static class RequestKnightPath
             return new BadRequestObjectResult(
                 "Please pass a source and target on the query string or in the request body");
 
-        msg.Add($"{source},{target}");
-        return new OkObjectResult($"Source: {source}, Target: {target}");
+        var job = new KnightPathJob
+        {
+            Source = source,
+            Target = target,
+            Id = Guid.NewGuid().ToString(),
+        };
+        
+        msg.Add(JsonConvert.SerializeObject(job));
+        log.LogInformation("RequestKnightPath processed a request");
+
+        return new OkObjectResult($"Operation Id {job.Id} was created. Please query it to find your results.");
     }
 }
