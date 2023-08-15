@@ -35,25 +35,15 @@ public static class ProcessKnightPath
         var target = job.Target;
         int? result = null;
 
-        try
-        {
-            // Calculate the shortest path for a chess knight from source to target
-            var tempResult = CalculateShortestPath(source, target);
-            if (tempResult != -1) // only assign valid results
-                result = tempResult;
-        }
-        catch (Exception ex)
-        {
-            log.LogError("An error occurred: {Message}", ex.Message);
-        }
+        var (numberOfMoves, shortestPath) = CalculateShortestPath(source, target);
 
         // Store the result in Azure Table Storage
         await table.AddAsync(new KnightPathResult
         {
             PartitionKey = "KnightPath",
             RowKey = job.Id,
-            NumberOfMoves = result, // this will be null if there is no valid path
-            ShortestPath = "",
+            NumberOfMoves = numberOfMoves == -1 ? null : numberOfMoves,
+            ShortestPath = shortestPath,
             Starting = source,
             Ending = target,
             Timestamp = DateTimeOffset.UtcNow
@@ -62,7 +52,7 @@ public static class ProcessKnightPath
         log.LogInformation("ProcessKnightPath processed a request: {MyQueueItem}", myQueueItem);
     }
 
-    private static int CalculateShortestPath(string source, string target)
+    private static (int distance, string path) CalculateShortestPath(string source, string target)
     {
         var regex = new Regex("^[a-h][1-8]$");
 
@@ -91,14 +81,21 @@ public static class ProcessKnightPath
         var distance = new int[8, 8];
         distance[sourceX, sourceY] = 0;
 
+        // Prepare the previous cells' coordinates for backtracking
+        var previous = new (int x, int y)?[8, 8];
+
         // Perform BFS
         while (queue.Count > 0)
         {
             var (x, y) = queue.Dequeue();
 
-            // If we have reached the target cell, return the distance
+            // If we have reached the target cell, backtrace the path and return distance and path
             if (x == targetX && y == targetY)
-                return distance[x, y];
+            {
+                var path = BacktracePath(previous, source, target);
+                var dist = distance[x, y];
+                return (dist, path);
+            }
 
             // Enqueue all valid moves from the current cell
             for (var i = 0; i < row.Length; i++)
@@ -107,14 +104,32 @@ public static class ProcessKnightPath
                 var newY = y + col[i];
 
                 if (newX is < 0 or >= 8 || newY is < 0 or >= 8 || visited[newX, newY]) continue;
+                previous[newX, newY] = (x, y);
                 visited[newX, newY] = true;
                 distance[newX, newY] = distance[x, y] + 1;
                 queue.Enqueue((newX, newY));
             }
         }
 
-        // If we haven't reached the target cell after BFS is complete,
-        // it means there is no valid path from the source to the target
-        return -1;
+        // If there is no valid path from the source to the target
+        return (-1, string.Empty);
+    }
+
+    private static string BacktracePath((int x, int y)?[,] previous, string source, string target)
+    {
+        var path = new List<string> { target };
+        var targetX = target[0] - 'a';
+        var targetY = int.Parse(target[1].ToString()) - 1;
+        var current = previous[targetX, targetY];
+
+        while (current.HasValue)
+        {
+            var (x, y) = current.Value;
+            path.Add($"{(char)(x + 'a')}{y + 1}");
+            current = previous[x, y];
+        }
+
+        path.Reverse(); // initially path is from target to source, we need it to be from source to target
+        return string.Join(":", path); // join cells by colon to get the final path string
     }
 }
