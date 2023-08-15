@@ -18,4 +18,7 @@
             <CopyToPublishDirectory>Never</CopyToPublishDirectory>
         </None>
     </ItemGroup>
+    <ItemGroup>
+      <Content Include=".github\workflows\master-jacksknightpath(production).yml" />
+    </ItemGroup>
 </Project>
